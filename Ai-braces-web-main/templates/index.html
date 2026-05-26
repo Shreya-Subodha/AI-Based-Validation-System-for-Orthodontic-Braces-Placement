@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OrthoAI — Bracket Placement Analyser</title>
+<style>
+  /* ── Reset & base ──────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+  }
+
+  /* ── Header ────────────────────────────────────── */
+  header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid #2d4a6b;
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+  }
+  header svg { flex-shrink: 0; }
+  header h1  { font-size: 1.4rem; font-weight: 700; color: #93c5fd; letter-spacing: .3px; }
+  header p   { font-size: .8rem; color: #64748b; margin-top: 2px; }
+
+  /* ── Main layout ────────────────────────────────── */
+  main {
+    max-width: 1200px;
+    margin: 32px auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── Upload card ────────────────────────────────── */
+  .upload-card {
+    background: #161b27;
+    border: 2px dashed #2d4a6b;
+    border-radius: 14px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .25s, background .25s;
+    position: relative;
+  }
+  .upload-card:hover, .upload-card.drag-over {
+    border-color: #3b82f6;
+    background: #1a2236;
+  }
+  .upload-card input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  }
+  .upload-icon { font-size: 2.8rem; margin-bottom: 10px; }
+  .upload-card h2 { font-size: 1.1rem; color: #93c5fd; margin-bottom: 6px; }
+  .upload-card p  { font-size: .82rem; color: #64748b; }
+
+  #preview-wrap {
+    margin-top: 18px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  #preview-img {
+    max-height: 180px;
+    border-radius: 8px;
+    border: 1px solid #2d4a6b;
+  }
+  #file-name { font-size: .85rem; color: #94a3b8; }
+
+  /* ── Analyse button ─────────────────────────────── */
+  .btn-analyse {
+    display: block;
+    margin: 22px auto 0;
+    padding: 13px 48px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: opacity .2s, transform .15s;
+    letter-spacing: .4px;
+  }
+  .btn-analyse:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+  .btn-analyse:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── Spinner ────────────────────────────────────── */
+  #spinner {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin: 30px 0;
+    color: #64748b;
+    font-size: .9rem;
+  }
+  .ring {
+    width: 48px; height: 48px;
+    border: 4px solid #1e3a5f;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Results section ────────────────────────────── */
+  #results { display: none; margin-top: 36px; }
+
+  /* ── Stats row ──────────────────────────────────── */
+  .stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    flex: 1 1 160px;
+    background: #161b27;
+    border: 1px solid #2d4a6b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+  }
+  .stat-card .label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 1.5rem; font-weight: 700; color: #93c5fd; }
+
+  .status-badge {
+    display: inline-block;
+    padding: 5px 16px;
+    border-radius: 999px;
+    font-size: .82rem;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+  .status-correct  { background: #14532d; color: #4ade80; }
+  .status-adjust   { background: #7c2d12; color: #fb923c; }
+
+  /* ── Image grid ─────────────────────────────────── */
+  .section-title {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #475569;
+    margin-bottom: 14px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #1e293b;
+  }
+
+  .img-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .img-card {
+    background: #161b27;
+    border: 1px solid #2d4a6b;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .img-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .img-card img   { width: 100%; display: block; }
+  .img-card .cap  {
+    padding: 10px 12px;
+    font-size: .78rem;
+    color: #94a3b8;
+    border-top: 1px solid #1e293b;
+    text-align: center;
+  }
+
+  /* ── Match table ────────────────────────────────── */
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid #2d4a6b;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .84rem;
+  }
+  thead tr { background: #1e3a5f; }
+  thead th { padding: 11px 14px; text-align: left; color: #93c5fd; font-weight: 600; white-space: nowrap; }
+  tbody tr { border-top: 1px solid #1e293b; transition: background .15s; }
+  tbody tr:hover { background: #1a2236; }
+  tbody td { padding: 10px 14px; color: #cbd5e1; }
+  tbody td .badge { font-size: .75rem; }
+
+  /* ── Lightbox ───────────────────────────────────── */
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn .2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  #lightbox img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  #lightbox-close {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    font-size: 1.8rem;
+    line-height: 1;
+    color: #e2e8f0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: .8;
+  }
+  #lightbox-close:hover { opacity: 1; }
+  .img-card img { cursor: zoom-in; }
+
+  /* ── Error box ──────────────────────────────────── */
+  #error-box {
+    display: none;
+    background: #450a0a;
+    border: 1px solid #b91c1c;
+    color: #fca5a5;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 18px;
+    font-size: .88rem;
+  }
+
+  /* ── Mode toggle ────────────────────────────────── */
+  .mode-toggle {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .mode-toggle label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #161b27;
+    border: 2px solid #2d4a6b;
+    border-radius: 10px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    font-size: .9rem;
+    color: #94a3b8;
+  }
+  .mode-toggle input[type="radio"] { display: none; }
+  .mode-toggle input[type="radio"]:checked + label {
+    border-color: #3b82f6;
+    background: #1a2236;
+    color: #93c5fd;
+  }
+  .mode-icon { font-size: 1.5rem; }
+
+  /* ── YOLO confidence pills ──────────────────────── */
+  .conf-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .conf-pill {
+    background: #1e3a5f;
+    color: #93c5fd;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: .78rem;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────── -->
+<header>
+  <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+    <circle cx="18" cy="18" r="18" fill="#1e3a5f"/>
+    <path d="M10 24 Q18 10 26 24" stroke="#3b82f6" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <circle cx="18" cy="16" r="3" fill="#3b82f6"/>
+  </svg>
+  <div>
+    <h1>OrthoAI — Bracket Placement Analyser</h1>
+    <p>AI-powered orthodontic bracket positioning assistant</p>
+  </div>
+</header>
+
+<!-- ── Main ───────────────────────────────────── -->
+<main>
+
+  <!-- Mode selector -->
+  <div class="mode-toggle">
+    <input type="radio" name="mode" id="mode-unet" value="unet" checked />
+    <label for="mode-unet" id="lbl-unet">
+      <span class="mode-icon">🦷</span>
+      <div>
+        <strong>Ideal Bracket Placement</strong><br>
+        <small>OPG image</small>
+      </div>
+    </label>
+
+    <input type="radio" name="mode" id="mode-yolo" value="yolo" />
+    <label for="mode-yolo" id="lbl-yolo">
+      <span class="mode-icon">🔍</span>
+      <div>
+        <strong>Bracket Detection</strong><br>
+        <small>Intraoral image</small>
+      </div>
+    </label>
+  </div>
+
+  <!-- Upload -->
+  <div class="upload-card" id="drop-zone">
+    <input type="file" id="file-input" accept="image/*" />
+    <div class="upload-icon" id="upload-icon">🦷</div>
+    <h2 id="upload-title">Drop your OPG image here</h2>
+    <p id="upload-hint">or click to browse — PNG / JPG / BMP / TIFF supported</p>
+
+    <div id="preview-wrap">
+      <img id="preview-img" src="" alt="preview" />
+      <span id="file-name"></span>
+    </div>
+  </div>
+
+  <button class="btn-analyse" id="btn-analyse" disabled>Analyse Image</button>
+
+  <!-- Spinner -->
+  <div id="spinner">
+    <div class="ring"></div>
+    <span>Running AI analysis… this may take a moment</span>
+  </div>
+
+  <!-- Error -->
+  <div id="error-box"></div>
+
+  <!-- Results: UNet mode -->
+  <div id="results-unet" style="display:none; margin-top:36px;">
+    <p class="section-title">Result</p>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="label">Teeth Detected</div>
+        <div class="value" id="stat-teeth">—</div>
+      </div>
+    </div>
+    <div class="img-grid" style="grid-template-columns: repeat(3, minmax(200px, 400px));">
+      <div class="img-card">
+        <img id="img-axis" src="" alt="Axis" />
+        <div class="cap">Tooth Axis + Bracket Points</div>
+      </div>
+      <div class="img-card">
+        <img id="img-brackets" src="" alt="Bracket Points" />
+        <div class="cap">Ideal Bracket Positions</div>
+      </div>
+      <div class="img-card">
+        <img id="img-mask" src="" alt="Mask" />
+        <div class="cap">Predicted Root Mask</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results: YOLO mode -->
+  <div id="results-yolo" style="display:none; margin-top:36px;">
+    <p class="section-title">Result</p>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="label">Brackets Found</div>
+        <div class="value" id="stat-brackets">—</div>
+      </div>
+      <div class="stat-card" style="flex: 2 1 300px;">
+        <div class="label">Confidence Scores</div>
+        <div class="conf-list" id="conf-list"></div>
+      </div>
+    </div>
+    <div class="img-grid" style="grid-template-columns: minmax(260px, 520px);">
+      <div class="img-card">
+        <img id="img-yolo" src="" alt="YOLO" />
+        <div class="cap">Detected Brackets</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ── Lightbox modal ──────────────────────────── -->
+<div id="lightbox">
+  <button id="lightbox-close">&#x2715;</button>
+  <img id="lightbox-img" src="" alt="Enlarged" />
+</div>
+
+<script>
+const fileInput   = document.getElementById("file-input");
+const dropZone    = document.getElementById("drop-zone");
+const previewWrap = document.getElementById("preview-wrap");
+const previewImg  = document.getElementById("preview-img");
+const fileNameEl  = document.getElementById("file-name");
+const btnAnalyse  = document.getElementById("btn-analyse");
+const spinner     = document.getElementById("spinner");
+const errorBox    = document.getElementById("error-box");
+
+function selectedMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+// ── Mode change → update upload hint ─────────
+document.querySelectorAll('input[name="mode"]').forEach(radio => {
+  radio.addEventListener("change", () => {
+    const isYolo = selectedMode() === "yolo";
+    document.getElementById("upload-icon").textContent  = isYolo ? "🔍" : "🦷";
+    document.getElementById("upload-title").textContent = isYolo
+      ? "Drop your intraoral image here"
+      : "Drop your OPG image here";
+    document.getElementById("upload-hint").textContent  = isYolo
+      ? "Intraoral photo — PNG / JPG / BMP / TIFF supported"
+      : "OPG panoramic X-ray — PNG / JPG / BMP / TIFF supported";
+    hideResults();
+  });
+});
+
+function hideResults() {
+  document.getElementById("results-unet").style.display = "none";
+  document.getElementById("results-yolo").style.display = "none";
+  errorBox.style.display = "none";
+}
+
+// ── Drag & drop ───────────────────────────────
+dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", ()  => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+function setFile(file) {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  fileInput.files = dt.files;
+
+  const reader = new FileReader();
+  reader.onload = ev => { previewImg.src = ev.target.result; };
+  reader.readAsDataURL(file);
+
+  fileNameEl.textContent = file.name;
+  previewWrap.style.display = "flex";
+  btnAnalyse.disabled = false;
+  hideResults();
+}
+
+// ── Analyse ───────────────────────────────────
+btnAnalyse.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  if (!file) { alert("No file selected"); return; }
+
+  btnAnalyse.disabled   = true;
+  spinner.style.display = "flex";
+  hideResults();
+
+  const fd = new FormData();
+  fd.append("image", file);
+  fd.append("mode",  selectedMode());
+
+  try {
+    const resp = await fetch("/analyze", { method: "POST", body: fd });
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) throw new Error(data.error || "Server error");
+
+    renderResults(data);
+
+  } catch (err) {
+    errorBox.textContent   = "Error: " + err.message;
+    errorBox.style.display = "block";
+  } finally {
+    spinner.style.display = "none";
+    btnAnalyse.disabled   = false;
+  }
+});
+
+// ── Render ────────────────────────────────────
+function renderResults(data) {
+  const ts = Date.now();
+  const imgUrl = rel => "/static/" + rel + "?t=" + ts;
+
+  if (data.mode === "unet") {
+    document.getElementById("stat-teeth").textContent    = data.teeth_detected;
+    document.getElementById("img-axis").src              = imgUrl(data.axis);
+    document.getElementById("img-brackets").src          = imgUrl(data.brackets);
+    document.getElementById("img-mask").src              = imgUrl(data.mask);
+    document.getElementById("results-unet").style.display = "block";
+    document.getElementById("results-unet").scrollIntoView({ behavior: "smooth" });
+
+  } else {
+    document.getElementById("stat-brackets").textContent = data.brackets_found;
+    document.getElementById("img-yolo").src               = imgUrl(data.yolo);
+
+    const confList = document.getElementById("conf-list");
+    confList.innerHTML = data.confidences.length
+      ? data.confidences.map(c => `<span class="conf-pill">${(c * 100).toFixed(1)}%</span>`).join("")
+      : "<span style='color:#475569;font-size:.8rem'>None detected</span>";
+
+    document.getElementById("results-yolo").style.display = "block";
+    document.getElementById("results-yolo").scrollIntoView({ behavior: "smooth" });
+  }
+}
+
+// ── Lightbox ──────────────────────────────────
+const lightbox    = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightbox-img");
+
+function openLightbox(src) {
+  lightboxImg.src = src;
+  lightbox.style.display = "flex";
+}
+function closeLightbox() {
+  lightbox.style.display = "none";
+  lightboxImg.src = "";
+}
+
+["img-axis", "img-brackets", "img-mask", "img-yolo"].forEach(id => {
+  document.getElementById(id).addEventListener("click", function () {
+    if (this.src) openLightbox(this.src);
+  });
+});
+
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+lightbox.addEventListener("click", e => { if (e.target === lightbox) closeLightbox(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
+</script>
+</body>
+</html>
